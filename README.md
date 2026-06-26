@@ -156,7 +156,37 @@ Download rodando em background
 | Erro Triton em 5090/PRO 6000 | `torch.compile` | Já tratado automaticamente — confira `sm_120` no log |
 
 ---
+## ⚠️ Templates com entrypoint próprio
 
+Alguns templates RunPod sobem o ComfyUI automaticamente via entrypoint
+Docker e **ignoram o Container Start Command**. Nesses casos o script
+não roda no boot e os custom nodes não são instalados.
+
+**Como identificar:** se o ComfyUI abriu mas você não viu nenhuma linha
+`ComfyWill init` no log do pod, o template tem entrypoint próprio.
+
+**Solução — rode manualmente no terminal do pod:**
+
+1. Conecte no pod → abra o terminal (JupyterLab porta 8888 ou SSH)
+2. Execute:
+
+\`\`\`bash
+curl -fsSL https://raw.githubusercontent.com/wiltonflame/comfyui-mstk/main/base_init.sh \
+  -o /tmp/init.sh
+
+# Só instalar nodes + baixar modelos (não tenta subir o ComfyUI de novo)
+SETUP_ONLY=1 MODEL=videoinpainting bash /tmp/init.sh
+\`\`\`
+
+3. Acompanhe o download:
+\`\`\`bash
+tail -f /tmp/model_download.log
+\`\`\`
+
+4. Quando terminar → **ComfyUI Manager → Restart** para os nodes carregarem.
+
+> O `SETUP_ONLY=1` é essencial aqui — sem ele o script tentaria subir
+> um segundo ComfyUI em conflito com o que já está rodando.
 ## 📦 Custom nodes incluídos
 
 WanVideoWrapper · WanAnimatePreprocess · KJNodes · VideoHelperSuite · LTXVideo · BFSNodes · SeedVR2 · ProPainter · DiffuEraser · OmnimatteZero · cotracker · LanPaint · Inpaint-CropAndStitch · GGUF · MiniMax-bmo · radiance · Crystools · MTB · Custom-Scripts · batch_image_loader · Memory_Cleanup · Blender · SUPIR · Nvidia RTX Nodes · rgthree · ComfyUI-Manager
