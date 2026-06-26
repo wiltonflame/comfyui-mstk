@@ -90,4 +90,4 @@ fi
 
 # ── CHAMA O START ORIGINAL DO TEMPLATE ───────────────────────────
 echo "Iniciando start.sh original do template..."
-exec /bin/bash /start_original.sh
+exec /bin/bash /start.sh
