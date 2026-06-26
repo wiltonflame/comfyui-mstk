@@ -189,7 +189,8 @@ tail -f /tmp/model_download.log
 > um segundo ComfyUI em conflito com o que já está rodando.
 ## 📦 Custom nodes incluídos
 
-WanVideoWrapper · WanAnimatePreprocess · KJNodes · VideoHelperSuite · LTXVideo · BFSNodes · SeedVR2 · ProPainter · DiffuEraser · OmnimatteZero · cotracker · LanPaint · Inpaint-CropAndStitch · GGUF · MiniMax-bmo · radiance · Crystools · MTB · Custom-Scripts · batch_image_loader · Memory_Cleanup · Blender · SUPIR · Nvidia RTX Nodes · rgthree · ComfyUI-Manager
+WanVideoWrapper · WanAnimatePreprocess · KJNodes · VideoHelperSuite · LTXVideo · BFSNodes · SeedVR2 · ProPainter · DiffuEraser · OmnimatteZero · cotracker · LanPaint · Inpaint-CropAndStitch · GGUF · MiniMax-bmo · radiance · Crystools · MTB · Custom-Scripts · batch_image_loader · Memory_Cleanup · Blender · SUPIR · Nvidia RTX Nodes · rgthree · ComfyUI-Manager · ComfyUI-Pixaroma
+
 
 ---
 
