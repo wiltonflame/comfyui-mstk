@@ -109,6 +109,8 @@ hf_dl "Lightricks/LTX-2.3-22b-IC-LoRA-Deblur" "ltx-2.3-22b-ic-lora-deblur-0.9.sa
 hf_dl "Lightricks/LTX-2.3-22b-IC-LoRA-Water-Simulation" "ltx-2.3-22b-ic-lora-water-simulation-0.9.safetensors" "loras"
 # In-Outpainting
 hf_dl "Lightricks/LTX-2.3-22b-IC-LoRA-In-Outpainting" "ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors" "loras"
+# FaceSwap (BFS - Best Face Swap Video)
+hf_dl "Alissonerdx/BFS-Best-Face-Swap-Video" "ltx-2.3/head_swap_v3_rank_adaptive_fro_098.safetensors" "loras"
 
 echo "═══ LTX 2.3 FULL download finalizado ═══"
 echo "⚠️  Lembre: OPENCV_IO_ENABLE_OPENEXR=1 no env para escrita de EXR linear"
