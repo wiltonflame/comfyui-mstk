@@ -62,34 +62,41 @@ echo "Models root : $MODELS_ROOT"
 if [ "$SKIP_NODES" != "1" ]; then
     echo "── Instalando custom nodes (foreground) ──"
 
-    EXTRA_NODES=(
-        "ComfyUI-WanVideoWrapper|https://github.com/kijai/ComfyUI-WanVideoWrapper.git"
-        "ComfyUI-WanAnimatePreprocess|https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git"
-        "ComfyUI-KJNodes|https://github.com/kijai/ComfyUI-KJNodes.git"
-        "ComfyUI-VideoHelperSuite|https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git"
-        "ComfyUI-LTXVideo|https://github.com/Lightricks/ComfyUI-LTXVideo.git"
-        "ComfyUI-BFSNodes|https://github.com/alisson-anjos/ComfyUI-BFSNodes.git"
-        "ComfyUI-SeedVR2_VideoUpscaler|https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler.git"
-        "ComfyUI_ProPainter_Nodes|https://github.com/daniabib/ComfyUI_ProPainter_Nodes.git"
-        "ComfyUI_DiffuEraser|https://github.com/smthemex/ComfyUI_DiffuEraser.git"
-        "ComfyUI-TP-OmnimatteZero|https://github.com/tpc2233/ComfyUI-TP-OmnimatteZero.git"
-        "cotracker_node|https://github.com/s9roll7/comfyui_cotracker_node.git"
-        "LanPaint|https://github.com/scraed/LanPaint.git"
-        "ComfyUI-Inpaint-CropAndStitch|https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git"
-        "ComfyUI-GGUF|https://github.com/city96/ComfyUI-GGUF.git"
-        "MiniMax-bmo|https://github.com/casterpollux/MiniMax-bmo.git"
-        "radiance|https://github.com/fxtdstudios/radiance.git"
-        "ComfyUI-Crystools|https://github.com/crystian/ComfyUI-Crystools.git"
-        "comfy_mtb|https://github.com/melMass/comfy_mtb.git"
-        "ComfyUI-Custom-Scripts|https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git"
-        "batch_image_loader|https://github.com/orion4d/batch_image_loader.git"
-        "Comfyui-Memory_Cleanup|https://github.com/LAOGOU-666/Comfyui-Memory_Cleanup.git"
-        "ComfyUI-Blender|https://github.com/alexisrolland/ComfyUI-Blender.git"
-        "ComfyUI-SUPIR|https://github.com/kijai/ComfyUI-SUPIR.git"
-        "Nvidia_RTX_Nodes_ComfyUI|https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI.git"
-        "rgthree-comfy|https://github.com/rgthree/rgthree-comfy.git"
-        "comfyui-manager|https://github.com/ltdrdata/ComfyUI-Manager.git"
-    )
+EXTRA_NODES=(
+    # Video / compositing
+    "ComfyUI-WanVideoWrapper|https://github.com/kijai/ComfyUI-WanVideoWrapper.git"
+    "ComfyUI-WanAnimatePreprocess|https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git"
+    "ComfyUI-KJNodes|https://github.com/kijai/ComfyUI-KJNodes.git"
+    "ComfyUI-VideoHelperSuite|https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git"
+    "ComfyUI-LTXVideo|https://github.com/Lightricks/ComfyUI-LTXVideo.git"
+    "ComfyUI-BFSNodes|https://github.com/alisson-anjos/ComfyUI-BFSNodes.git"
+    "ComfyUI-SeedVR2_VideoUpscaler|https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler.git"
+    "ComfyUI_ProPainter_Nodes|https://github.com/daniabib/ComfyUI_ProPainter_Nodes.git"
+    "ComfyUI_DiffuEraser|https://github.com/smthemex/ComfyUI_DiffuEraser.git"
+    "ComfyUI-TP-OmnimatteZero|https://github.com/tpc2233/ComfyUI-TP-OmnimatteZero.git"
+    "cotracker_node|https://github.com/s9roll7/comfyui_cotracker_node.git"
+    # Inpaint / sampling
+    "LanPaint|https://github.com/scraed/LanPaint.git"
+    "ComfyUI-Inpaint-CropAndStitch|https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git"
+    # GGUF
+    "ComfyUI-GGUF|https://github.com/city96/ComfyUI-GGUF.git"
+    # AI models / API
+    "MiniMax-bmo|https://github.com/casterpollux/MiniMax-bmo.git"
+    "radiance|https://github.com/fxtdstudios/radiance.git"
+    # Utilities
+    "ComfyUI-Crystools|https://github.com/crystian/ComfyUI-Crystools.git"
+    "comfy_mtb|https://github.com/melMass/comfy_mtb.git"
+    "ComfyUI-Custom-Scripts|https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git"
+    "ComfyUI-Pixaroma|https://github.com/pixaroma/ComfyUI-Pixaroma.git"
+    "batch_image_loader|https://github.com/orion4d/batch_image_loader.git"
+    "Comfyui-Memory_Cleanup|https://github.com/LAOGOU-666/Comfyui-Memory_Cleanup.git"
+    "ComfyUI-Blender|https://github.com/alexisrolland/ComfyUI-Blender.git"
+    "ComfyUI-SUPIR|https://github.com/kijai/ComfyUI-SUPIR.git"
+    "Nvidia_RTX_Nodes_ComfyUI|https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI.git"
+    "rgthree-comfy|https://github.com/rgthree/rgthree-comfy.git"
+    # Manager
+    "comfyui-manager|https://github.com/ltdrdata/ComfyUI-Manager.git"
+)
 
     for entry in "${EXTRA_NODES[@]}"; do
         name="${entry%%|*}"
