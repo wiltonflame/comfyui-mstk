@@ -157,12 +157,6 @@ Download rodando em background
 
 ---
 
-## 🔄 Atualizando
-
-Edite qualquer script direto no GitHub (lápis ✏️ → Commit). **Não precisa rebuildar nada** — o próximo pod que você subir já baixa a versão nova via `curl`. O GitHub é a fonte da verdade.
-
----
-
 ## 📦 Custom nodes incluídos
 
 WanVideoWrapper · WanAnimatePreprocess · KJNodes · VideoHelperSuite · LTXVideo · BFSNodes · SeedVR2 · ProPainter · DiffuEraser · OmnimatteZero · cotracker · LanPaint · Inpaint-CropAndStitch · GGUF · MiniMax-bmo · radiance · Crystools · MTB · Custom-Scripts · batch_image_loader · Memory_Cleanup · Blender · SUPIR · Nvidia RTX Nodes · rgthree · ComfyUI-Manager
