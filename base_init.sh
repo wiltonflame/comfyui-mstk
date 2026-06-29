@@ -113,7 +113,6 @@ if [ "$SKIP_NODES" != "1" ]; then
         "ComfyUI-Custom-Scripts|https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git"
         "batch_image_loader|https://github.com/orion4d/batch_image_loader.git"
         "Comfyui-Memory_Cleanup|https://github.com/LAOGOU-666/Comfyui-Memory_Cleanup.git"
-        "ComfyUI-Blender|https://github.com/alexisrolland/ComfyUI-Blender.git"
         "ComfyUI-SUPIR|https://github.com/kijai/ComfyUI-SUPIR.git"
         "Nvidia_RTX_Nodes_ComfyUI|https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI.git"
         "rgthree-comfy|https://github.com/rgthree/rgthree-comfy.git"
