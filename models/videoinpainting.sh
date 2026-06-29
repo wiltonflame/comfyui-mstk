@@ -53,26 +53,43 @@ dl "$PP_BASE/raft-things.pth"               "$PP_WEIGHTS" "raft-things.pth"
 dl "$PP_BASE/i3d_rgb_imagenet.pt"           "$PP_WEIGHTS" "i3d_rgb_imagenet.pt"
 
 # ════════════════════════════════════════════════════════════════
-#  2. DIFFUERASER — usa VAE sd-mse + clip_l + diretório próprio
-#  (brushnet + unet_main + propainter weights compartilhados)
+#  2. DIFFUERASER — pesos do repo HF lixiaowen/diffuEraser
+#  Estrutura no disco (esperada pelo node):
+#    models/vae/sd-vae-ft-mse.safetensors
+#    models/clip/clip_l.safetensors  (já vem com qualquer ComfyUI)
+#    models/DiffuEraservae/brushnet/{config.json, diffusion_pytorch_model.safetensors}
+#    models/DiffuEraservae/unet_main/{config.json, diffusion_pytorch_model.safetensors}
+#    models/DiffuEraservae/propainter/{ProPainter.pth, raft-things.pth, recurrent_flow_completion.pth}
 # ════════════════════════════════════════════════════════════════
 echo "── [2/3] DiffuEraser ──"
+
 # VAE base (sd-vae-ft-mse) → models/vae
 hf_dl "stabilityai/sd-vae-ft-mse" "diffusion_pytorch_model.safetensors" "$MODELS_ROOT/vae" "sd-vae-ft-mse.safetensors"
-# clip_l padrão do ComfyUI → models/clip
-hf_dl "comfyanonymous/clip_vision_models" "clip_l.safetensors" "$MODELS_ROOT/clip" "clip_l.safetensors"
+
+# clip_l: já vem no ComfyUI padrão (models/clip/clip_l.safetensors).
+# Se não existir, baixa do repo oficial do ComfyUI clip vision.
+CLIP_DIR="$MODELS_ROOT/clip"
+mkdir -p "$CLIP_DIR"
+if [ ! -f "$CLIP_DIR/clip_l.safetensors" ]; then
+    echo "  ⬇️  clip_l.safetensors (do repo Comfy-Org Flux1-dev)"
+    hf_dl "Comfy-Org/flux1-dev" "split_files/text_encoders/clip_l.safetensors" "$CLIP_DIR" "clip_l.safetensors"
+fi
 
 # Pesos DiffuEraser (brushnet + unet_main) → models/DiffuEraservae
 DE_DIR="$MODELS_ROOT/DiffuEraservae"
-hf_dl "lixiaowen-xw/DiffuEraser" "diffuEraser/brushnet/diffusion_pytorch_model.safetensors" "$DE_DIR/brushnet" "diffusion_pytorch_model.safetensors"
-hf_dl "lixiaowen-xw/DiffuEraser" "diffuEraser/brushnet/config.json" "$DE_DIR/brushnet" "config.json"
-hf_dl "lixiaowen-xw/DiffuEraser" "diffuEraser/unet_main/diffusion_pytorch_model.safetensors" "$DE_DIR/unet_main" "diffusion_pytorch_model.safetensors"
-hf_dl "lixiaowen-xw/DiffuEraser" "diffuEraser/unet_main/config.json" "$DE_DIR/unet_main" "config.json"
-# DiffuEraser também usa os pesos do ProPainter
+DE_REPO="lixiaowen/diffuEraser"
+hf_dl "$DE_REPO" "brushnet/diffusion_pytorch_model.safetensors" "$DE_DIR/brushnet" "diffusion_pytorch_model.safetensors"
+hf_dl "$DE_REPO" "brushnet/config.json"                          "$DE_DIR/brushnet" "config.json"
+hf_dl "$DE_REPO" "unet_main/diffusion_pytorch_model.safetensors" "$DE_DIR/unet_main" "diffusion_pytorch_model.safetensors"
+hf_dl "$DE_REPO" "unet_main/config.json"                         "$DE_DIR/unet_main" "config.json"
+
+# DiffuEraser também usa os pesos do ProPainter no subdir propainter/
 DE_PP="$DE_DIR/propainter"
 mkdir -p "$DE_PP"
 for f in ProPainter.pth raft-things.pth recurrent_flow_completion.pth; do
-    [ -f "$PP_WEIGHTS/$f" ] && cp -n "$PP_WEIGHTS/$f" "$DE_PP/$f" 2>/dev/null && echo "  ↪️  copiado p/ DiffuEraser: $f"
+    if [ -f "$PP_WEIGHTS/$f" ] && [ ! -f "$DE_PP/$f" ]; then
+        cp "$PP_WEIGHTS/$f" "$DE_PP/$f" && echo "  ↪️  copiado p/ DiffuEraser: $f"
+    fi
 done
 
 # ════════════════════════════════════════════════════════════════
