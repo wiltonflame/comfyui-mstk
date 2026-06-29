@@ -42,24 +42,12 @@ fi
 
 # ── 2. DETECÇÃO DO COMFYUI (funciona em qualquer pod) ────────────
 COMFYUI_DIR=""
-# Permite forçar o caminho manualmente: COMFYUI_DIR=/caminho bash ...
-if [ -n "$COMFYUI_DIR_OVERRIDE" ] && [ -f "$COMFYUI_DIR_OVERRIDE/main.py" ]; then
-    COMFYUI_DIR="$COMFYUI_DIR_OVERRIDE"
-fi
-# Caminhos comuns conhecidos
+for d in /ComfyUI /workspace/ComfyUI /comfyui /workspace/comfyui /root/ComfyUI; do
+    if [ -f "$d/main.py" ]; then COMFYUI_DIR="$d"; break; fi
+done
 if [ -z "$COMFYUI_DIR" ]; then
-    for d in /ComfyUI /workspace/ComfyUI /comfyui /workspace/comfyui /root/ComfyUI \
-             /workspace/runpod-slim/ComfyUI /workspace/madapps/ComfyUI; do
-        if [ -f "$d/main.py" ]; then COMFYUI_DIR="$d"; break; fi
-    done
-fi
-# Busca ampla: qualquer main.py cuja pasta tenha também comfy/ e nodes.py
-# (assinatura única do ComfyUI). maxdepth 6 cobre estruturas aninhadas.
-if [ -z "$COMFYUI_DIR" ]; then
-    while IFS= read -r mp; do
-        d="$(dirname "$mp")"
-        if [ -d "$d/comfy" ] && [ -f "$d/nodes.py" ]; then COMFYUI_DIR="$d"; break; fi
-    done < <(find /workspace / -maxdepth 6 -name "main.py" 2>/dev/null)
+    found=$(find / -maxdepth 4 -name "main.py" -path "*omfyUI*" 2>/dev/null | head -1)
+    [ -n "$found" ] && COMFYUI_DIR="$(dirname "$found")"
 fi
 [ -z "$COMFYUI_DIR" ] && COMFYUI_DIR="/ComfyUI"
 
@@ -126,11 +114,39 @@ if [ "$SKIP_NODES" != "1" ]; then
     wait
     echo "Custom nodes prontos"
 
-    if ! python3 -c 'import onnxruntime as o, sys; sys.exit(0 if "CUDAExecutionProvider" in o.get_available_providers() else 1)' 2>/dev/null; then
-        echo "Reinstalando onnxruntime-gpu..."
-        pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null
-        pip install onnxruntime-gpu --quiet 2>/dev/null
+    # ── FIX: dependências comuns que requirements dos nodes quebram ──
+    # 1. onnxruntime-gpu 1.27+ exige CUDA 13. Pod com cu128 precisa cu12-compat (1.20.1)
+    # 2. accelerate antigo (sem clear_device_cache) quebra SeedVR2/DiffuEraser/MiniMax
+    # 3. diffusers/peft precisam estar alinhados
+    echo "── Aplicando fixes de dependências (accelerate/onnxruntime/diffusers) ──"
+
+    # Detecta versão de CUDA do PyTorch
+    CUDA_MAJOR=$(python3 -c "import torch; print(torch.version.cuda.split('.')[0] if torch.version.cuda else '0')" 2>/dev/null || echo "0")
+    echo "PyTorch CUDA major: $CUDA_MAJOR"
+
+    if [ "$CUDA_MAJOR" = "12" ]; then
+        # Pod em cu12 — força onnxruntime-gpu 1.20.1 (último que suporta cu12)
+        pip install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" \
+            --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ \
+            2>/dev/null \
+        || pip install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" 2>/dev/null
+    else
+        # cu13+ usa a versão mais recente
+        if ! python3 -c 'import onnxruntime as o, sys; sys.exit(0 if "CUDAExecutionProvider" in o.get_available_providers() else 1)' 2>/dev/null; then
+            pip install --quiet --force-reinstall onnxruntime-gpu 2>/dev/null
+        fi
     fi
+
+    # Upgrade accelerate + peft + diffusers (versões compatíveis entre si)
+    pip install --quiet --upgrade "accelerate>=1.0" "peft>=0.13" "diffusers>=0.32" 2>/dev/null
+
+    # Sanity check
+    python3 -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null \
+        && echo "  ✅ accelerate OK (clear_device_cache disponivel)" \
+        || echo "  ⚠️  accelerate ainda problemático — nodes que usam peft podem falhar"
+    python3 -c "import onnxruntime as o; assert 'CUDAExecutionProvider' in o.get_available_providers()" 2>/dev/null \
+        && echo "  ✅ onnxruntime CUDA OK" \
+        || echo "  ⚠️  onnxruntime sem CUDA — Animate Preprocess pode falhar"
 else
     echo "SKIP_NODES=1 — pulando custom nodes"
 fi
@@ -157,36 +173,7 @@ else
 fi
 
 # ── 5. SOBE O COMFYUI (universal) ────────────────────────────────
-
-# SETUP_ONLY=1 → instala nodes/modelos e PARA (não tenta subir o ComfyUI).
-# Use quando o template já tem entrypoint próprio e o ComfyUI já está no ar.
-# Depois de instalar, reinicie o ComfyUI pela UI do Manager (Restart) ou
-# reinicie o pod para os novos nodes carregarem.
-if [ "$SETUP_ONLY" = "1" ]; then
-    echo "═══════════════════════════════════════════════"
-    echo "SETUP_ONLY=1 — nodes e modelos instalados."
-    echo "ComfyUI NÃO foi reiniciado por este script."
-    echo ""
-    echo "Para os novos custom nodes aparecerem:"
-    echo "  • ComfyUI Manager → Restart, OU"
-    echo "  • reinicie o pod"
-    echo ""
-    echo "Acompanhe o download dos modelos:"
-    echo "  tail -f /tmp/model_download.log"
-    echo "═══════════════════════════════════════════════"
-    exit 0
-fi
-
 echo "── Iniciando ComfyUI ──"
-
-# Se já existe um ComfyUI rodando na 8188, não sobe outro (evita conflito
-# em templates com entrypoint próprio). Só instala e segue vivo.
-if curl -s --max-time 3 http://127.0.0.1:8188 >/dev/null 2>&1; then
-    echo "ComfyUI já está rodando na porta 8188 (entrypoint do template)."
-    echo "Nodes/modelos instalados. Reinicie pelo Manager para carregar os nodes."
-    echo "Mantendo processo vivo..."
-    sleep infinity
-fi
 
 if [ -f /start.sh ] && grep -q "ComfyUI" /start.sh 2>/dev/null; then
     echo "Detectado /start.sh do template — delegando a ele"
