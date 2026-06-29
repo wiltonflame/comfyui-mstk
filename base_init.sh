@@ -58,6 +58,35 @@ mkdir -p "$CUSTOM_NODES_DIR" "$MODELS_ROOT"
 echo "ComfyUI dir : $COMFYUI_DIR"
 echo "Models root : $MODELS_ROOT"
 
+# ── DETECÇÃO DO VENV (runpod-slim usa .venv-cu128, outros podem ter .venv) ──
+VENV_PYTHON=""
+for venv_name in .venv-cu128 .venv venv env; do
+    candidate="$COMFYUI_DIR/$venv_name/bin/python"
+    if [ -f "$candidate" ]; then
+        if "$candidate" -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
+            VENV_PYTHON="$candidate"
+            VENV_PIP="$COMFYUI_DIR/$venv_name/bin/pip"
+            echo "Venv detectado: $COMFYUI_DIR/$venv_name"
+            # Redetecta SM com o Python correto do venv
+            SM=$("$VENV_PYTHON" -c "import torch; cap=torch.cuda.get_device_capability(); print(cap[0]*10+cap[1])" 2>/dev/null || echo "$SM")
+            echo "GPU SM (venv): sm_$SM"
+            if [ "$SM" -ge 100 ]; then export TORCH_COMPILE_DISABLE=1; fi
+            break
+        fi
+    fi
+done
+
+# Python/pip a usar — venv tem prioridade sobre sistema
+if [ -n "$VENV_PYTHON" ]; then
+    PY="$VENV_PYTHON"
+    PIP="$VENV_PIP"
+else
+    PY="python3"
+    PIP="pip"
+    echo "Sem venv CUDA — usando Python do sistema"
+fi
+export PY PIP
+
 # ── 3. CUSTOM NODES — FOREGROUND (ComfyUI precisa deles no boot) ──
 if [ "$SKIP_NODES" != "1" ]; then
     echo "── Instalando custom nodes (foreground) ──"
@@ -109,7 +138,7 @@ if [ "$SKIP_NODES" != "1" ]; then
         name="${entry%%|*}"
         dir="$CUSTOM_NODES_DIR/$name"
         [ -f "$dir/requirements.txt" ] && \
-            pip install -r "$dir/requirements.txt" --quiet 2>/dev/null &
+            $PIP install -r "$dir/requirements.txt" --quiet 2>/dev/null &
     done
     wait
     echo "Custom nodes prontos"
@@ -124,29 +153,26 @@ if [ "$SKIP_NODES" != "1" ]; then
     CUDA_MAJOR=$(python3 -c "import torch; print(torch.version.cuda.split('.')[0] if torch.version.cuda else '0')" 2>/dev/null || echo "0")
     echo "PyTorch CUDA major: $CUDA_MAJOR"
 
+    # Fix numpy: scipy compilado em NumPy 1.x não roda com NumPy 2.x
+    $PIP install --quiet "numpy<2.0" 2>/dev/null         && echo "  ✅ numpy<2.0 OK"         || echo "  ⚠️  numpy fix falhou"
+
+    CUDA_MAJOR=$("$PY" -c "import torch; print(torch.version.cuda.split('.')[0] if torch.version.cuda else '0')" 2>/dev/null || echo "0")
+    echo "PyTorch CUDA major: $CUDA_MAJOR"
+
     if [ "$CUDA_MAJOR" = "12" ]; then
-        # Pod em cu12 — força onnxruntime-gpu 1.20.1 (último que suporta cu12)
-        pip install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" \
-            --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ \
-            2>/dev/null \
-        || pip install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" 2>/dev/null
+        $PIP install --quiet --force-reinstall "onnxruntime-gpu==1.20.1"             --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/             2>/dev/null         || $PIP install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" 2>/dev/null
     else
-        # cu13+ usa a versão mais recente
-        if ! python3 -c 'import onnxruntime as o, sys; sys.exit(0 if "CUDAExecutionProvider" in o.get_available_providers() else 1)' 2>/dev/null; then
-            pip install --quiet --force-reinstall onnxruntime-gpu 2>/dev/null
+        if ! "$PY" -c 'import onnxruntime as o, sys; sys.exit(0 if "CUDAExecutionProvider" in o.get_available_providers() else 1)' 2>/dev/null; then
+            $PIP install --quiet --force-reinstall onnxruntime-gpu 2>/dev/null
         fi
     fi
 
-    # Upgrade accelerate + peft + diffusers (versões compatíveis entre si)
-    pip install --quiet --upgrade "accelerate>=1.0" "peft>=0.13" "diffusers>=0.32" 2>/dev/null
+    # Upgrade accelerate + peft + diffusers no venv correto
+    $PIP install --quiet --upgrade "accelerate>=1.0" "peft>=0.13" "diffusers>=0.32" 2>/dev/null
 
-    # Sanity check
-    python3 -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null \
-        && echo "  ✅ accelerate OK (clear_device_cache disponivel)" \
-        || echo "  ⚠️  accelerate ainda problemático — nodes que usam peft podem falhar"
-    python3 -c "import onnxruntime as o; assert 'CUDAExecutionProvider' in o.get_available_providers()" 2>/dev/null \
-        && echo "  ✅ onnxruntime CUDA OK" \
-        || echo "  ⚠️  onnxruntime sem CUDA — Animate Preprocess pode falhar"
+    # Sanity check usando o Python correto
+    "$PY" -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null         && echo "  ✅ accelerate OK"         || echo "  ⚠️  accelerate ainda problemático"
+    "$PY" -c "import onnxruntime as o; assert 'CUDAExecutionProvider' in o.get_available_providers()" 2>/dev/null         && echo "  ✅ onnxruntime CUDA OK"         || echo "  ⚠️  onnxruntime sem CUDA"
 else
     echo "SKIP_NODES=1 — pulando custom nodes"
 fi
