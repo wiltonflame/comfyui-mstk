@@ -142,6 +142,19 @@ if [ "$SKIP_NODES" != "1" ]; then
     wait
     echo "Custom nodes prontos"
 
+    # ── PATCH: remove pins problemáticos antes dos fixes de dependência ──
+    # DiffuEraser pina accelerate==0.30.1 que quebra peft/SeedVR2/MiniMax/OmnimatteZero
+    for req in \
+        "$CUSTOM_NODES_DIR/ComfyUI_DiffuEraser/requirements.txt" \
+        "$CUSTOM_NODES_DIR/ComfyUI-SeedVR2_VideoUpscaler/requirements.txt"; do
+        if [ -f "$req" ]; then
+            sed -i 's/accelerate==0\.30\.1/accelerate>=1.0/g' "$req"
+            sed -i 's/accelerate==[0-9]\+\.[0-9]\+\.[0-9]*/accelerate>=1.0/g' "$req"
+            sed -i 's/diffusers==[0-9]\+\.[0-9]\+\.[0-9]*/diffusers>=0.32/g' "$req"
+            echo "  Patched: $(basename $(dirname $req))/requirements.txt"
+        fi
+    done
+
     # ── FIX: dependências comuns que requirements dos nodes quebram ──
     # 1. onnxruntime-gpu 1.27+ exige CUDA 13. Pod com cu128 precisa cu12-compat (1.20.1)
     # 2. accelerate antigo (sem clear_device_cache) quebra SeedVR2/DiffuEraser/MiniMax
@@ -155,6 +168,11 @@ if [ "$SKIP_NODES" != "1" ]; then
     # Fix numpy: scipy compilado em NumPy 1.x não roda com NumPy 2.x
     $PIP install --quiet "numpy<2.0" 2>/dev/null         && echo "  ✅ numpy<2.0 OK"         || echo "  ⚠️  numpy fix falhou"
 
+    # kornia é blacklistada pelo Manager mas necessária para LTXVideo (pyramid_blending)
+    $PIP install --quiet "kornia>=0.8" 2>/dev/null \
+        && echo "  ✅ kornia OK" \
+        || echo "  ⚠️  kornia falhou"
+
     CUDA_MAJOR=$("$PY" -c "import torch; print(torch.version.cuda.split('.')[0] if torch.version.cuda else '0')" 2>/dev/null || echo "0")
     echo "PyTorch CUDA major: $CUDA_MAJOR"
 
@@ -167,7 +185,7 @@ if [ "$SKIP_NODES" != "1" ]; then
     fi
 
     # Upgrade accelerate + peft + diffusers no venv correto
-    $PIP install --quiet --upgrade "accelerate>=1.0" "peft>=0.13" "diffusers>=0.32" 2>/dev/null
+    $PIP install --quiet --upgrade "accelerate>=1.0" "peft>=0.13" "diffusers>=0.32" "transformers>=4.51" 2>/dev/null
 
     # Sanity check usando o Python correto
     "$PY" -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null         && echo "  ✅ accelerate OK"         || echo "  ⚠️  accelerate ainda problemático"
