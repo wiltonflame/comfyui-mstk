@@ -185,7 +185,26 @@ if [ "$SKIP_NODES" != "1" ]; then
     fi
 
     # Upgrade accelerate + peft + diffusers no venv correto
-    $PIP install --quiet --upgrade "accelerate>=1.0" "peft>=0.13" "diffusers>=0.32" "transformers>=4.51" 2>/dev/null
+
+    # FIX: dist-info corrompido do accelerate causa "TypeError: NoneType
+    # object is not iterable" no boot (transformers nao consegue ler a versao).
+    # Acontece apos multiplas instalacoes conflitantes na mesma sessao pip.
+    SITE_PACKAGES=$("$PY" -c "import site; print(site.getsitepackages()[0])" 2>/dev/null)
+    if [ -n "$SITE_PACKAGES" ]; then
+        rm -rf "$SITE_PACKAGES"/accelerate-*.dist-info 2>/dev/null
+        rm -rf "$SITE_PACKAGES"/accelerate 2>/dev/null
+    fi
+    # Instala versões mínimas sem arrastar dependências (--no-deps evita downgrade de numpy/torch)
+    $PIP install --quiet --no-deps         "accelerate==1.14.0"         "peft>=0.13"         "diffusers>=0.38"         "transformers>=4.51" 2>/dev/null
+    # Reinstala einops>=0.8 (rotary-embedding-torch precisa disso)
+    $PIP install --quiet "einops>=0.8" 2>/dev/null
+
+    # Sanity check: garante que a versao do accelerate e legivel (nao so importavel)
+    "$PY" -c "import accelerate; v=accelerate.__version__; assert v" 2>/dev/null \
+        && echo "  accelerate metadata OK ($("$PY" -c "import accelerate; print(accelerate.__version__)" 2>/dev/null))" \
+        || { echo "  accelerate metadata corrompida - forcando reinstall limpo"; \
+             rm -rf "$SITE_PACKAGES"/accelerate-*.dist-info "$SITE_PACKAGES"/accelerate 2>/dev/null; \
+             $PIP install --quiet --no-deps "accelerate==1.14.0" 2>/dev/null; }
 
     # Sanity check usando o Python correto
     "$PY" -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null         && echo "  ✅ accelerate OK"         || echo "  ⚠️  accelerate ainda problemático"
