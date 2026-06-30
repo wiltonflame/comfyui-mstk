@@ -155,6 +155,31 @@ if [ "$SKIP_NODES" != "1" ]; then
         fi
     done
 
+    # ── PATCH: ComfyUI-LTXVideo importa 'pad' de kornia.geometry.transform.pyramid
+    # mas kornia>=0.8.3 removeu esse re-export (pad só existe em kornia.core agora).
+    # Bug upstream conhecido (PRs #506/#508/#516 abertos, ainda não mergeados).
+    LTX_PYRAMID="$CUSTOM_NODES_DIR/ComfyUI-LTXVideo/pyramid_blending.py"
+    if [ -f "$LTX_PYRAMID" ] && grep -q "from kornia.geometry.transform.pyramid import" "$LTX_PYRAMID" 2>/dev/null; then
+        "$PY" << PYEOF
+path = "$LTX_PYRAMID"
+with open(path) as f:
+    content = f.read()
+start = content.find("from kornia.geometry.transform.pyramid import (")
+if start != -1:
+    end = content.find(")", start) + 1
+    block = content[start:end]
+    inner = block[block.find("(")+1:block.rfind(")")]
+    raw_names = [n.strip() for n in inner.split(",")]
+    if "pad" in raw_names:
+        names = [n for n in raw_names if n and n != "pad"]
+        new_block = "from kornia.core import pad\nfrom kornia.geometry.transform.pyramid import (\n    " + ",\n    ".join(names) + ",\n)"
+        content = content[:start] + new_block + content[end:]
+        with open(path, "w") as f:
+            f.write(content)
+        print("  Patched: ComfyUI-LTXVideo/pyramid_blending.py (kornia pad import)")
+PYEOF
+    fi
+
     # ── FIX: dependências comuns que requirements dos nodes quebram ──
     # 1. onnxruntime-gpu 1.27+ exige CUDA 13. Pod com cu128 precisa cu12-compat (1.20.1)
     # 2. accelerate antigo (sem clear_device_cache) quebra SeedVR2/DiffuEraser/MiniMax
@@ -167,11 +192,6 @@ if [ "$SKIP_NODES" != "1" ]; then
 
     # Fix numpy: scipy compilado em NumPy 1.x não roda com NumPy 2.x
     $PIP install --quiet "numpy<2.0" 2>/dev/null         && echo "  ✅ numpy<2.0 OK"         || echo "  ⚠️  numpy fix falhou"
-
-    # kornia é blacklistada pelo Manager mas necessária para LTXVideo (pyramid_blending)
-    $PIP install --quiet "kornia>=0.8" 2>/dev/null \
-        && echo "  ✅ kornia OK" \
-        || echo "  ⚠️  kornia falhou"
 
     CUDA_MAJOR=$("$PY" -c "import torch; print(torch.version.cuda.split('.')[0] if torch.version.cuda else '0')" 2>/dev/null || echo "0")
     echo "PyTorch CUDA major: $CUDA_MAJOR"
@@ -207,9 +227,23 @@ if [ "$SKIP_NODES" != "1" ]; then
     } > "$CONSTRAINTS"
     echo "  Constraints: torch==$TORCH_VER, numpy<2.0"
 
-    $PIP install --quiet -c "$CONSTRAINTS"         "accelerate==1.14.0"         "peft>=0.13"         "diffusers>=0.38"         "transformers>=4.51"         "huggingface_hub>=0.34" 2>/dev/null
-    # Reinstala einops>=0.8 (rotary-embedding-torch precisa disso)
-    $PIP install --quiet -c "$CONSTRAINTS" "einops>=0.8" 2>/dev/null
+    # FIX: kornia é mascarada pelo sistema (--system-site-packages do venv).
+    # Precisa de --force-reinstall --no-deps ISOLADO — sem --no-deps ele
+    # tentaria reinstalar o torch também e quebraria contra o constraint
+    # de versão exata (torch==X+cuXXX não existe no PyPI genérico).
+    echo "  Forçando kornia no venv (bypass system-site-packages)..."
+    $PIP install --quiet --force-reinstall --no-deps "kornia>=0.8" 2>/dev/null
+
+    # Resto das libs: SEM --force-reinstall. O cap "transformers<5.0" já
+    # força o downgrade sozinho, pois a versão atual (5.x) VIOLA esse cap
+    # — não precisa forçar. Isso evita o pip tentar reinstalar o torch.
+    $PIP install --quiet -c "$CONSTRAINTS" \
+        "accelerate==1.14.0" \
+        "peft>=0.13" \
+        "diffusers==0.38.0" \
+        "transformers>=4.51,<5.0" \
+        "huggingface_hub>=0.34,<1.0" \
+        "einops>=0.8" 2>/dev/null
 
     # Sanity check final de toda a cadeia
     "$PY" -c "
@@ -289,6 +323,10 @@ if [ "$RUNPOD_SLIM" = "1" ]; then
     "$PIP" install --quiet --force-reinstall --no-deps "numpy<2.0" 2>/dev/null
 
     # Sobe ComfyUI direto com o venv (sem passar pelo /start.sh)
+    # Mata qualquer processo ComfyUI travado na porta 8188 de uma execucao anterior
+    pkill -f "main.py --listen" 2>/dev/null
+    sleep 2
+
     echo "Iniciando ComfyUI direto pelo venv (bypass /start.sh)..."
     cd "$COMFYUI_DIR" || exit 1
     exec "$PY" main.py --listen 0.0.0.0 --port 8188 --enable-cors-header '*'
