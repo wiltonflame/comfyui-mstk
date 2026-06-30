@@ -237,11 +237,51 @@ fi
 # ── 5. SOBE O COMFYUI (universal) ────────────────────────────────
 echo "── Iniciando ComfyUI ──"
 
+# Detecta runpod-slim (tem constraints que sobrescrevem nossas versões no boot)
+RUNPOD_SLIM=0
+if [ -f /opt/comfyui-runtime-constraints.txt ]; then
+    RUNPOD_SLIM=1
+    echo "Template runpod-slim detectado (com runtime constraints)"
+fi
+
+if [ "$RUNPOD_SLIM" = "1" ]; then
+    # runpod-slim: subimos FileBrowser/Jupyter manualmente E o ComfyUI direto,
+    # BYPASSANDO o /start.sh que aplicaria constraints e sobrescreveria numpy.
+    echo "Subindo serviços auxiliares (FileBrowser + JupyterLab)..."
+
+    # FileBrowser na 8080 (se o template tem o binário)
+    if command -v filebrowser >/dev/null 2>&1; then
+        FB_DB=$(find /workspace -maxdepth 3 -name "filebrowser.db" 2>/dev/null | head -1)
+        [ -z "$FB_DB" ] && FB_DB="/workspace/filebrowser.db"
+        nohup filebrowser -d "$FB_DB" -a 0.0.0.0 -p 8080 -r / > /tmp/filebrowser.log 2>&1 &
+        echo "FileBrowser iniciado na porta 8080"
+    fi
+
+    # JupyterLab na 8888
+    if [ -f "$COMFYUI_DIR/.venv-cu128/bin/jupyter-lab" ]; then
+        nohup "$COMFYUI_DIR/.venv-cu128/bin/jupyter-lab" --ip=0.0.0.0 --port=8888 --allow-root --no-browser \
+            --NotebookApp.token='' --NotebookApp.password='' \
+            --ServerApp.allow_origin='*' --notebook-dir=/ \
+            > /tmp/jupyter.log 2>&1 &
+        echo "JupyterLab iniciado na porta 8888"
+    fi
+
+    # Re-aplica numpy<2 caso algum constraints já tenha rodado
+    "$PIP" install --quiet --force-reinstall --no-deps "numpy<2.0" 2>/dev/null
+
+    # Sobe ComfyUI direto com o venv (sem passar pelo /start.sh)
+    echo "Iniciando ComfyUI direto pelo venv (bypass /start.sh)..."
+    cd "$COMFYUI_DIR" || exit 1
+    exec "$PY" main.py --listen 0.0.0.0 --port 8188 --enable-cors-header '*'
+fi
+
+# Fallback: template hearmeman ou similar
 if [ -f /start.sh ] && grep -q "ComfyUI" /start.sh 2>/dev/null; then
     echo "Detectado /start.sh do template — delegando a ele"
     exec /bin/bash /start.sh
 fi
 
+# Pod base (sem entrypoint próprio)
 echo "Pod base — iniciando ComfyUI diretamente em $COMFYUI_DIR"
 cd "$COMFYUI_DIR" || exit 1
 
@@ -254,6 +294,6 @@ if command -v jupyter-lab >/dev/null 2>&1; then
 fi
 
 ATTENTION_FLAG=""
-python3 -c "import sageattention" 2>/dev/null && ATTENTION_FLAG="--use-sage-attention"
+"$PY" -c "import sageattention" 2>/dev/null && ATTENTION_FLAG="--use-sage-attention"
 
-exec python3 main.py --listen --port 8188 --enable-cors-header '*' $ATTENTION_FLAG
+exec "$PY" main.py --listen 0.0.0.0 --port 8188 --enable-cors-header '*' $ATTENTION_FLAG
