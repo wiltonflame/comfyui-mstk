@@ -115,6 +115,17 @@ if [ "$SKIP_NODES" != "1" ]; then
         "Comfyui-Memory_Cleanup|https://github.com/LAOGOU-666/Comfyui-Memory_Cleanup.git"
         "ComfyUI-SUPIR|https://github.com/kijai/ComfyUI-SUPIR.git"
         "Nvidia_RTX_Nodes_ComfyUI|https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI.git"
+        "ComfyUI-QwenVL|https://github.com/1038lab/ComfyUI-QwenVL.git"
+        "ComfyUI_essentials|https://github.com/cubiq/ComfyUI_essentials.git"
+        "ComfyUI-qwenmultiangle|https://github.com/jtydhr88/ComfyUI-qwenmultiangle.git"
+        "ComfyUI-Florence2|https://github.com/kijai/ComfyUI-Florence2.git"
+        "comfyui_controlnet_aux|https://github.com/Fannovel16/comfyui_controlnet_aux.git"
+        "ComfyUI-Impact-Pack|https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
+        "ComfyUI-RMBG|https://github.com/1038lab/ComfyUI-RMBG.git"
+        "ComfyUI-WD14-Tagger|https://github.com/pythongosssss/ComfyUI-WD14-Tagger.git"
+        "RES4LYF|https://github.com/ClownsharkBatwing/RES4LYF.git"
+        "comfyui_segment_anything|https://github.com/storyicon/comfyui_segment_anything.git"
+        "ComfyUI_Fill-Nodes|https://github.com/filliptm/ComfyUI_Fill-Nodes.git"
         "rgthree-comfy|https://github.com/rgthree/rgthree-comfy.git"
         "comfyui-manager|https://github.com/ltdrdata/ComfyUI-Manager.git"
     )
@@ -132,18 +143,20 @@ if [ "$SKIP_NODES" != "1" ]; then
         fi
     done
 
-    echo "── Instalando requirements dos nodes ──"
-    for entry in "${EXTRA_NODES[@]}"; do
-        name="${entry%%|*}"
-        dir="$CUSTOM_NODES_DIR/$name"
-        [ -f "$dir/requirements.txt" ] && \
-            $PIP install -r "$dir/requirements.txt" --quiet 2>/dev/null &
-    done
-    wait
-    echo "Custom nodes prontos"
+    # ── CONSTRAINTS: protege torch/numpy desde já, antes de qualquer
+    # instalação de requirements.txt de node — assim a agregação abaixo
+    # nunca arrisca tocar nessas duas libs já validadas no boot.
+    TORCH_VER=$("$PY" -c "import torch; print(torch.__version__)" 2>/dev/null)
+    CONSTRAINTS="/tmp/comfywill_constraints.txt"
+    {
+        [ -n "$TORCH_VER" ] && echo "torch==$TORCH_VER"
+        echo "numpy<2.0"
+    } > "$CONSTRAINTS"
+    echo "  Constraints: torch==$TORCH_VER, numpy<2.0"
 
-    # ── PATCH: remove pins problemáticos antes dos fixes de dependência ──
-    # DiffuEraser pina accelerate==0.30.1 que quebra peft/SeedVR2/MiniMax/OmnimatteZero
+    # ── PATCH: remove pins problemáticos ANTES de agregar requirements ──
+    # DiffuEraser pina accelerate==0.30.1 que quebra peft/SeedVR2/MiniMax/OmnimatteZero.
+    # Precisa rodar antes da agregação, senão o pin ruim entra no merge.
     for req in \
         "$CUSTOM_NODES_DIR/ComfyUI_DiffuEraser/requirements.txt" \
         "$CUSTOM_NODES_DIR/ComfyUI-SeedVR2_VideoUpscaler/requirements.txt"; do
@@ -180,6 +193,96 @@ if start != -1:
 PYEOF
     fi
 
+    # ── REQUIREMENTS: RESOLUÇÃO AGREGADA (single-pass) ──────────────
+    # Em vez de instalar requirements.txt de cada node em sequência/paralelo
+    # (onde o node N pode silenciosamente derrubar uma versão que o node N-1
+    # já tinha deixado funcionando), juntamos TODOS os requirements.txt num
+    # único arquivo, removemos duplicatas e pacotes "críticos" (que o bloco
+    # de fixes abaixo já controla com precisão), e mandamos pro pip de UMA
+    # vez. O resolver do pip enxerga o grafo completo e resolve tudo junto
+    # — muito mais estável que instalações seriais brigando entre si.
+    echo "── Resolvendo requirements agregados (single-pass) ──"
+    MERGED_REQ="/tmp/comfywill_merged_requirements.txt"
+
+    "$PY" << PYEOF
+import re, glob, os
+
+# Pacotes "críticos" que o bloco de fixes finais já trava com precisão.
+# Excluí-los da agregação evita que a resolução conjunta tente uma versão
+# diferente da que sabemos que funciona — o bloco final tem a palavra final.
+BLACKLIST = {
+    "torch", "torchvision", "torchaudio", "torchsde", "xformers", "triton",
+    "numpy", "kornia", "safetensors", "accelerate", "diffusers", "transformers",
+    "huggingface_hub", "huggingface-hub", "peft", "einops",
+    "onnxruntime", "onnxruntime-gpu", "onnxruntime-directml",
+}
+
+seen = set()
+lines_out = []
+skipped = 0
+files_used = 0
+
+pattern = os.path.join("$CUSTOM_NODES_DIR", "*", "requirements.txt")
+for req_file in sorted(glob.glob(pattern)):
+    try:
+        added_from_this_file = 0
+        with open(req_file, encoding="utf-8", errors="ignore") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith(("-r ", "-e ", "--")):
+                    continue
+                pkg = re.split(r'[=<>!~\[\s;@]', line, 1)[0].strip().lower()
+                if not pkg:
+                    continue
+                if pkg in BLACKLIST:
+                    skipped += 1
+                    continue
+                key = line.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                lines_out.append(line)
+                added_from_this_file += 1
+        if added_from_this_file:
+            files_used += 1
+    except Exception as e:
+        print(f"  Aviso: erro lendo {req_file}: {e}")
+
+with open("$MERGED_REQ", "w") as f:
+    f.write("\n".join(lines_out) + ("\n" if lines_out else ""))
+
+print(f"  {len(lines_out)} linhas unicas de {files_used} requirements.txt agregadas")
+print(f"  {skipped} linhas de pacotes criticos excluidas (protegidos pelo fix block final)")
+PYEOF
+
+    AGGREGATE_OK=0
+    if [ -s "$MERGED_REQ" ]; then
+        if $PIP install --quiet -r "$MERGED_REQ" -c "$CONSTRAINTS" 2>/tmp/comfywill_merge_error.log; then
+            echo "  ✅ Requirements agregados instalados com sucesso (single-pass)"
+            AGGREGATE_OK=1
+        else
+            echo "  ⚠️  Resolução agregada falhou — caindo para instalação individual (modo seguro)"
+            tail -5 /tmp/comfywill_merge_error.log 2>/dev/null | sed 's/^/    /'
+        fi
+    else
+        echo "  Nenhum requirements.txt relevante encontrado"
+        AGGREGATE_OK=1
+    fi
+
+    if [ "$AGGREGATE_OK" != "1" ]; then
+        echo "  Fallback: instalando requirements.txt node por node..."
+        for entry in "${EXTRA_NODES[@]}"; do
+            name="${entry%%|*}"
+            dir="$CUSTOM_NODES_DIR/$name"
+            [ -f "$dir/requirements.txt" ] && \
+                $PIP install -r "$dir/requirements.txt" --quiet 2>/dev/null &
+        done
+        wait
+    fi
+    echo "Custom nodes prontos"
+
     # ── FIX: dependências comuns que requirements dos nodes quebram ──
     # 1. onnxruntime-gpu 1.27+ exige CUDA 13. Pod com cu128 precisa cu12-compat (1.20.1)
     # 2. accelerate antigo (sem clear_device_cache) quebra SeedVR2/DiffuEraser/MiniMax
@@ -191,13 +294,18 @@ PYEOF
     echo "PyTorch CUDA major: $CUDA_MAJOR"
 
     # Fix numpy: scipy compilado em NumPy 1.x não roda com NumPy 2.x
-    $PIP install --quiet "numpy<2.0" 2>/dev/null         && echo "  ✅ numpy<2.0 OK"         || echo "  ⚠️  numpy fix falhou"
+    $PIP install --quiet "numpy<2.0" 2>/dev/null \
+        && echo "  ✅ numpy<2.0 OK" \
+        || echo "  ⚠️  numpy fix falhou"
 
     CUDA_MAJOR=$("$PY" -c "import torch; print(torch.version.cuda.split('.')[0] if torch.version.cuda else '0')" 2>/dev/null || echo "0")
     echo "PyTorch CUDA major: $CUDA_MAJOR"
 
     if [ "$CUDA_MAJOR" = "12" ]; then
-        $PIP install --quiet --force-reinstall "onnxruntime-gpu==1.20.1"             --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/             2>/dev/null         || $PIP install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" 2>/dev/null
+        $PIP install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" \
+            --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ \
+            2>/dev/null \
+        || $PIP install --quiet --force-reinstall "onnxruntime-gpu==1.20.1" 2>/dev/null
     else
         if ! "$PY" -c 'import onnxruntime as o, sys; sys.exit(0 if "CUDAExecutionProvider" in o.get_available_providers() else 1)' 2>/dev/null; then
             $PIP install --quiet --force-reinstall onnxruntime-gpu 2>/dev/null
@@ -214,18 +322,6 @@ PYEOF
         rm -rf "$SITE_PACKAGES"/accelerate-*.dist-info 2>/dev/null
         rm -rf "$SITE_PACKAGES"/accelerate 2>/dev/null
     fi
-    # ── FIX: usar CONSTRAINTS em vez de --no-deps ──
-    # --no-deps evita que torch/numpy sejam tocados, mas também trava
-    # huggingface_hub na versão antiga, incompatível com transformers novo
-    # (ImportError: cannot import name 'is_offline_mode' from huggingface_hub).
-    # Constraints resolve as dependências normalmente, mas trava torch/numpy.
-    TORCH_VER=$("$PY" -c "import torch; print(torch.__version__)" 2>/dev/null)
-    CONSTRAINTS="/tmp/comfywill_constraints.txt"
-    {
-        [ -n "$TORCH_VER" ] && echo "torch==$TORCH_VER"
-        echo "numpy<2.0"
-    } > "$CONSTRAINTS"
-    echo "  Constraints: torch==$TORCH_VER, numpy<2.0"
 
     # FIX: kornia é mascarada pelo sistema (--system-site-packages do venv).
     # Precisa de --force-reinstall --no-deps ISOLADO — sem --no-deps ele
@@ -260,12 +356,15 @@ print('  numpy:', numpy.__version__)
              $PIP install --quiet -c "$CONSTRAINTS" "accelerate==1.14.0" 2>/dev/null; }
 
     # Sanity check usando o Python correto
-    "$PY" -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null         && echo "  ✅ accelerate OK"         || echo "  ⚠️  accelerate ainda problemático"
-    "$PY" -c "import onnxruntime as o; assert 'CUDAExecutionProvider' in o.get_available_providers()" 2>/dev/null         && echo "  ✅ onnxruntime CUDA OK"         || echo "  ⚠️  onnxruntime sem CUDA"
+    "$PY" -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null \
+        && echo "  ✅ accelerate OK" \
+        || echo "  ⚠️  accelerate ainda problemático"
+    "$PY" -c "import onnxruntime as o; assert 'CUDAExecutionProvider' in o.get_available_providers()" 2>/dev/null \
+        && echo "  ✅ onnxruntime CUDA OK" \
+        || echo "  ⚠️  onnxruntime sem CUDA"
 else
     echo "SKIP_NODES=1 — pulando custom nodes"
 fi
-
 command -v aria2c >/dev/null 2>&1 || { echo "Instalando aria2..."; apt-get update -qq 2>/dev/null && apt-get install -y -qq aria2 2>/dev/null; }
 pip install -q "huggingface_hub[cli,hf_xet]" 2>/dev/null
 
