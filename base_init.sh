@@ -194,17 +194,36 @@ if [ "$SKIP_NODES" != "1" ]; then
         rm -rf "$SITE_PACKAGES"/accelerate-*.dist-info 2>/dev/null
         rm -rf "$SITE_PACKAGES"/accelerate 2>/dev/null
     fi
-    # Instala versões mínimas sem arrastar dependências (--no-deps evita downgrade de numpy/torch)
-    $PIP install --quiet --no-deps         "accelerate==1.14.0"         "peft>=0.13"         "diffusers>=0.38"         "transformers>=4.51" 2>/dev/null
+    # ── FIX: usar CONSTRAINTS em vez de --no-deps ──
+    # --no-deps evita que torch/numpy sejam tocados, mas também trava
+    # huggingface_hub na versão antiga, incompatível com transformers novo
+    # (ImportError: cannot import name 'is_offline_mode' from huggingface_hub).
+    # Constraints resolve as dependências normalmente, mas trava torch/numpy.
+    TORCH_VER=$("$PY" -c "import torch; print(torch.__version__)" 2>/dev/null)
+    CONSTRAINTS="/tmp/comfywill_constraints.txt"
+    {
+        [ -n "$TORCH_VER" ] && echo "torch==$TORCH_VER"
+        echo "numpy<2.0"
+    } > "$CONSTRAINTS"
+    echo "  Constraints: torch==$TORCH_VER, numpy<2.0"
+
+    $PIP install --quiet -c "$CONSTRAINTS"         "accelerate==1.14.0"         "peft>=0.13"         "diffusers>=0.38"         "transformers>=4.51"         "huggingface_hub>=0.34" 2>/dev/null
     # Reinstala einops>=0.8 (rotary-embedding-torch precisa disso)
-    $PIP install --quiet "einops>=0.8" 2>/dev/null
+    $PIP install --quiet -c "$CONSTRAINTS" "einops>=0.8" 2>/dev/null
+
+    # Sanity check final de toda a cadeia
+    "$PY" -c "
+import torch, numpy
+print('  torch:', torch.__version__, '| CUDA:', torch.cuda.is_available())
+print('  numpy:', numpy.__version__)
+" 2>/dev/null
 
     # Sanity check: garante que a versao do accelerate e legivel (nao so importavel)
     "$PY" -c "import accelerate; v=accelerate.__version__; assert v" 2>/dev/null \
         && echo "  accelerate metadata OK ($("$PY" -c "import accelerate; print(accelerate.__version__)" 2>/dev/null))" \
         || { echo "  accelerate metadata corrompida - forcando reinstall limpo"; \
              rm -rf "$SITE_PACKAGES"/accelerate-*.dist-info "$SITE_PACKAGES"/accelerate 2>/dev/null; \
-             $PIP install --quiet --no-deps "accelerate==1.14.0" 2>/dev/null; }
+             $PIP install --quiet -c "$CONSTRAINTS" "accelerate==1.14.0" 2>/dev/null; }
 
     # Sanity check usando o Python correto
     "$PY" -c "from accelerate.utils.memory import clear_device_cache" 2>/dev/null         && echo "  ✅ accelerate OK"         || echo "  ⚠️  accelerate ainda problemático"
